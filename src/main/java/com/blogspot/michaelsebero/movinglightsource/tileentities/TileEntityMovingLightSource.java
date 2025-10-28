@@ -7,6 +7,7 @@ import net.minecraft.block.Block;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.entity.item.EntityItem;
+import net.minecraft.item.ItemBlock;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ITickable;
 import net.minecraft.util.math.AxisAlignedBB;
@@ -14,15 +15,18 @@ import net.minecraft.util.math.BlockPos;
 
 import java.util.List;
 
+/**
+ * Improved tile entity with faster cleanup and dynamic light support
+ */
 public class TileEntityMovingLightSource extends TileEntity implements ITickable
 {
     private EntityLivingBase theEntityLiving;
     private EntityItem trackedItem;
     private boolean isItemLight = false;
     private boolean shouldDie = false;
-    private int deathTimer = 2;
+    private int deathTimer = 1; // REDUCED from 2 to 1 for faster cleanup
     private int tickCounter = 0;
-    private static final int UPDATE_FREQUENCY = 5;
+    private static final int UPDATE_FREQUENCY = 3; // REDUCED from 5 to 3 for more responsive updates
     private static final double MAX_DISTANCE_SQ = 5.0D;
     private static final double ITEM_MAX_DISTANCE_SQ = 3.0D;
     
@@ -34,7 +38,7 @@ public class TileEntityMovingLightSource extends TileEntity implements ITickable
     @Override
     public void update()
     {
-        // Performance: Only check every N ticks
+        // Performance: Only check every N ticks (unless dying)
         tickCounter++;
         if (tickCounter < UPDATE_FREQUENCY && !shouldDie)
         {
@@ -42,7 +46,7 @@ public class TileEntityMovingLightSource extends TileEntity implements ITickable
         }
         tickCounter = 0;
         
-        // Check if already dying
+        // Check if already dying - immediate cleanup when dying
         if (shouldDie)
         {
             if (deathTimer > 0)
@@ -73,7 +77,7 @@ public class TileEntityMovingLightSource extends TileEntity implements ITickable
             return;
         }
         
-        // Handle living entity lights (original behavior)
+        // Handle living entity lights
         updateLivingEntityLight();
     }
     
@@ -87,13 +91,14 @@ public class TileEntityMovingLightSource extends TileEntity implements ITickable
         {
             trackedItem = findNearbyLightItem();
             
-            // If still no item found, this light should die
+            // If still no item found, this light should die immediately
             if (trackedItem == null)
             {
                 Block blockAtLocation = world.getBlockState(getPos()).getBlock();
                 if (blockAtLocation instanceof BlockMovingLightSource)
                 {
                     shouldDie = true;
+                    deathTimer = 0; // Die immediately for items
                 }
                 return;
             }
@@ -107,24 +112,60 @@ public class TileEntityMovingLightSource extends TileEntity implements ITickable
             if (blockAtLocation instanceof BlockMovingLightSource)
             {
                 shouldDie = true;
+                deathTimer = 0; // Die immediately for items
             }
             return;
         }
         
-        // Check if item still emits light
-        if (trackedItem.getItem().isEmpty() || 
-            !BlockMovingLightSource.LIGHT_SOURCE_MAP.containsKey(trackedItem.getItem().getItem()))
+        // Check if item still emits light using the improved detection
+        if (trackedItem.getItem().isEmpty() || !isItemEmittingLight(trackedItem))
         {
             Block blockAtLocation = world.getBlockState(getPos()).getBlock();
             if (blockAtLocation instanceof BlockMovingLightSource)
             {
                 shouldDie = true;
+                deathTimer = 0; // Die immediately for items
             }
         }
     }
     
     /**
-     * Update logic for EntityLivingBase lights (original behavior)
+     * Check if an EntityItem emits light (using dynamic detection)
+     */
+    private boolean isItemEmittingLight(EntityItem entityItem)
+    {
+        if (entityItem == null || entityItem.getItem().isEmpty())
+        {
+            return false;
+        }
+        
+        // Use the improved dynamic detection from BlockMovingLightSource
+        // This will work for any mod's light-emitting items
+        return BlockMovingLightSource.LIGHT_SOURCE_MAP.containsKey(entityItem.getItem().getItem()) ||
+               getLightLevelForItem(entityItem.getItem().getItem()) > 0;
+    }
+    
+    /**
+     * Get dynamic light level for an item
+     */
+    private int getLightLevelForItem(net.minecraft.item.Item item)
+    {
+        if (item instanceof ItemBlock)
+        {
+            ItemBlock itemBlock = (ItemBlock) item;
+            Block block = itemBlock.getBlock();
+            
+            if (block != null && block != net.minecraft.init.Blocks.AIR)
+            {
+                return block.getLightValue(block.getDefaultState());
+            }
+        }
+        
+        return 0;
+    }
+    
+    /**
+     * Update logic for EntityLivingBase lights
      */
     private void updateLivingEntityLight()
     {
@@ -173,7 +214,7 @@ public class TileEntityMovingLightSource extends TileEntity implements ITickable
             }
             else 
             {
-                // Handle light level changes
+                // Handle light level changes - now supports dynamic light levels
                 Block expectedBlock = BlockMovingLightSource.lightBlockToPlace(theEntityLiving);
                 if (blockAtLocation != expectedBlock)
                 {
@@ -184,7 +225,7 @@ public class TileEntityMovingLightSource extends TileEntity implements ITickable
     }
     
     /**
-     * Find nearby EntityItem that emits light
+     * Find nearby EntityItem that emits light (using dynamic detection)
      */
     private EntityItem findNearbyLightItem()
     {
@@ -201,7 +242,8 @@ public class TileEntityMovingLightSource extends TileEntity implements ITickable
         {
             if (!item.isDead && !item.getItem().isEmpty())
             {
-                if (BlockMovingLightSource.LIGHT_SOURCE_MAP.containsKey(item.getItem().getItem()))
+                // Use dynamic light detection
+                if (isItemEmittingLight(item))
                 {
                     double distSq = getDistanceSqToEntity(item);
                     if (distSq <= ITEM_MAX_DISTANCE_SQ)
@@ -249,7 +291,7 @@ public class TileEntityMovingLightSource extends TileEntity implements ITickable
     }
     
     /**
-     * Mark this as an item light (for cleanup purposes)
+     * Mark this as an item light
      */
     public void markAsItemLight()
     {

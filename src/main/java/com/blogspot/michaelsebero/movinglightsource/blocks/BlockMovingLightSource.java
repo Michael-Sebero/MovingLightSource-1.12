@@ -17,7 +17,6 @@
 package com.blogspot.michaelsebero.movinglightsource.blocks;
 
 import java.util.HashMap;
-import java.util.Iterator;
 
 import com.blogspot.michaelsebero.movinglightsource.registries.BlockRegistry;
 import com.blogspot.michaelsebero.movinglightsource.tileentities.TileEntityMovingLightSource;
@@ -32,6 +31,7 @@ import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.init.Blocks;
 import net.minecraft.init.Items;
 import net.minecraft.item.Item;
+import net.minecraft.item.ItemBlock;
 import net.minecraft.item.ItemStack;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.BlockRenderLayer;
@@ -45,20 +45,14 @@ import net.minecraftforge.fml.relauncher.SideOnly;
 
 /**
  * @author jabelar
- * Improved version with better performance and bug fixes
+ * Improved version with dynamic light detection for ALL light-emitting blocks
  */
 public class BlockMovingLightSource extends Block implements ITileEntityProvider
 {
-    // Use a more efficient data structure and cache the block reference
-    // Public so EntityItem can check if dropped items should emit light
+    // Static mappings for known vanilla light sources (for optimization)
     public static final HashMap<Item, Block> LIGHT_SOURCE_MAP = new HashMap<>();
-    private static final AxisAlignedBB BOUNDING_BOX = new AxisAlignedBB(0.5D, 0.5D, 0.5D, 0.5D, 0.5D, 0.5D);
     
-    // Cache for performance - avoid repeated map lookups
-    private static Block cachedMainHandBlock = null;
-    private static Block cachedOffHandBlock = null;
-    private static ItemStack cachedMainHandStack = ItemStack.EMPTY;
-    private static ItemStack cachedOffHandStack = ItemStack.EMPTY;
+    private static final AxisAlignedBB BOUNDING_BOX = new AxisAlignedBB(0.5D, 0.5D, 0.5D, 0.5D, 0.5D, 0.5D);
 
     public BlockMovingLightSource(String parName)
     {
@@ -72,9 +66,9 @@ public class BlockMovingLightSource extends Block implements ITileEntityProvider
     // Initialize light source mappings - call only after all items/blocks registered
     public static void initMapLightSources()
     {
-        LIGHT_SOURCE_MAP.clear(); // Ensure clean state
+        LIGHT_SOURCE_MAP.clear();
         
-        // Add all light-emitting items with their corresponding light blocks
+        // Add vanilla light-emitting items for quick lookup
         addLightSource(Item.getItemFromBlock(Blocks.BEACON), BlockRegistry.MOVING_LIGHT_SOURCE_15);
         addLightSource(Item.getItemFromBlock(Blocks.LIT_PUMPKIN), BlockRegistry.MOVING_LIGHT_SOURCE_15);
         addLightSource(Items.LAVA_BUCKET, BlockRegistry.MOVING_LIGHT_SOURCE_15);
@@ -86,13 +80,12 @@ public class BlockMovingLightSource extends Block implements ITileEntityProvider
         addLightSource(Item.getItemFromBlock(Blocks.REDSTONE_TORCH), BlockRegistry.MOVING_LIGHT_SOURCE_9);
         addLightSource(Item.getItemFromBlock(Blocks.REDSTONE_ORE), BlockRegistry.MOVING_LIGHT_SOURCE_7);
         
-        // Remove any AIR items that may have been added
         LIGHT_SOURCE_MAP.remove(Items.AIR);
         
-        System.out.println("Registered " + LIGHT_SOURCE_MAP.size() + " light-emitting items");
+        System.out.println("[MovingLightSource] Registered " + LIGHT_SOURCE_MAP.size() + " vanilla light-emitting items");
+        System.out.println("[MovingLightSource] Dynamic detection enabled for modded light sources");
     }
     
-    // Helper method to safely add light sources
     private static void addLightSource(Item item, Block block)
     {
         if (item != null && item != Items.AIR && block != null)
@@ -108,8 +101,79 @@ public class BlockMovingLightSource extends Block implements ITileEntityProvider
     }
     
     /**
+     * Get the light level an ItemStack emits (works for ANY mod's items)
+     * This is the KEY method that makes modded items work!
+     */
+    public static int getItemLightLevel(ItemStack stack)
+    {
+        if (stack.isEmpty())
+        {
+            return 0;
+        }
+        
+        Item item = stack.getItem();
+        
+        // First check if it's an ItemBlock with a light-emitting block
+        if (item instanceof ItemBlock)
+        {
+            ItemBlock itemBlock = (ItemBlock) item;
+            Block block = itemBlock.getBlock();
+            
+            if (block != null && block != Blocks.AIR)
+            {
+                // This will work for ANY modded block that emits light!
+                int lightLevel = block.getLightValue(block.getDefaultState());
+                if (lightLevel > 0)
+                {
+                    return lightLevel;
+                }
+            }
+        }
+        
+        // Check static map for special items (like lava bucket, glowstone dust)
+        Block staticBlock = LIGHT_SOURCE_MAP.get(item);
+        if (staticBlock != null)
+        {
+            return staticBlock.getLightValue(staticBlock.getDefaultState());
+        }
+        
+        return 0;
+    }
+    
+    /**
+     * Get the appropriate moving light block for a given light level
+     * PUBLIC so EventHandler can use it for dropped items
+     */
+    public static Block getLightBlockForLevel(int lightLevel)
+    {
+        if (lightLevel >= 15)
+        {
+            return BlockRegistry.MOVING_LIGHT_SOURCE_15;
+        }
+        else if (lightLevel >= 14)
+        {
+            return BlockRegistry.MOVING_LIGHT_SOURCE_14;
+        }
+        else if (lightLevel >= 9)
+        {
+            return BlockRegistry.MOVING_LIGHT_SOURCE_9;
+        }
+        else if (lightLevel >= 7)
+        {
+            return BlockRegistry.MOVING_LIGHT_SOURCE_7;
+        }
+        else if (lightLevel > 0)
+        {
+            // For any other positive light level, use the closest available
+            return BlockRegistry.MOVING_LIGHT_SOURCE_7;
+        }
+        
+        return Blocks.AIR;
+    }
+    
+    /**
      * Check if entity is holding a light-emitting item in either hand
-     * Optimized to avoid null pointer exceptions
+     * NOW WORKS WITH ALL MODS!
      */
     public static boolean isHoldingLightItem(EntityLivingBase entity)
     {
@@ -118,14 +182,12 @@ public class BlockMovingLightSource extends Block implements ITileEntityProvider
         ItemStack mainHand = entity.getHeldItemMainhand();
         ItemStack offHand = entity.getHeldItemOffhand();
         
-        return (!mainHand.isEmpty() && LIGHT_SOURCE_MAP.containsKey(mainHand.getItem())) ||
-               (!offHand.isEmpty() && LIGHT_SOURCE_MAP.containsKey(offHand.getItem()));
+        return getItemLightLevel(mainHand) > 0 || getItemLightLevel(offHand) > 0;
     }
     
     /**
      * Determine which light block to place based on held items
-     * Returns the block with higher light level if both hands have light sources
-     * Optimized with caching to reduce map lookups
+     * NOW WORKS WITH ALL MODS!
      */
     public static Block lightBlockToPlace(EntityLivingBase entity)
     {
@@ -137,68 +199,23 @@ public class BlockMovingLightSource extends Block implements ITileEntityProvider
         ItemStack mainHand = entity.getHeldItemMainhand();
         ItemStack offHand = entity.getHeldItemOffhand();
         
-        // Check cache first to avoid repeated map lookups
-        Block mainHandBlock = getCachedOrLookup(mainHand, true);
-        Block offHandBlock = getCachedOrLookup(offHand, false);
+        // Get light levels for both hands
+        int mainHandLight = getItemLightLevel(mainHand);
+        int offHandLight = getItemLightLevel(offHand);
         
-        // Both hands have light sources - choose brighter one
-        if (mainHandBlock != null && offHandBlock != null)
-        {
-            float mainLight = mainHandBlock.getLightValue(mainHandBlock.getDefaultState());
-            float offLight = offHandBlock.getLightValue(offHandBlock.getDefaultState());
-            return mainLight >= offLight ? mainHandBlock : offHandBlock;
-        }
+        // Use the higher light level
+        int maxLight = Math.max(mainHandLight, offHandLight);
         
-        // Only one hand has light source
-        if (mainHandBlock != null) return mainHandBlock;
-        if (offHandBlock != null) return offHandBlock;
-        
-        // No light sources
-        return Blocks.AIR;
+        return getLightBlockForLevel(maxLight);
     }
     
     /**
-     * Cache-aware lookup to reduce HashMap queries
-     */
-    private static Block getCachedOrLookup(ItemStack stack, boolean isMainHand)
-    {
-        if (stack.isEmpty()) return null;
-        
-        ItemStack cached = isMainHand ? cachedMainHandStack : cachedOffHandStack;
-        
-        // Check if cache is still valid
-        if (ItemStack.areItemsEqual(stack, cached))
-        {
-            return isMainHand ? cachedMainHandBlock : cachedOffHandBlock;
-        }
-        
-        // Cache miss - perform lookup
-        Block block = LIGHT_SOURCE_MAP.get(stack.getItem());
-        
-        // Update cache
-        if (isMainHand)
-        {
-            cachedMainHandStack = stack.copy();
-            cachedMainHandBlock = block;
-        }
-        else
-        {
-            cachedOffHandStack = stack.copy();
-            cachedOffHandBlock = block;
-        }
-        
-        return block;
-    }
-    
-    /**
-     * Clear the cache - call when entity changes or world unloads
+     * Clear cache - called when needed (e.g., dimension change, world unload)
      */
     public static void clearCache()
     {
-        cachedMainHandBlock = null;
-        cachedOffHandBlock = null;
-        cachedMainHandStack = ItemStack.EMPTY;
-        cachedOffHandStack = ItemStack.EMPTY;
+        // This method exists for compatibility with EventHandler
+        // No actual cache to clear in this simplified version
     }
 
     @Override
@@ -240,13 +257,13 @@ public class BlockMovingLightSource extends Block implements ITileEntityProvider
     @Override
     public void onBlockAdded(World worldIn, BlockPos pos, IBlockState state)
     {
-        // Intentionally empty - no special logic needed
+        // Intentionally empty
     }
 
     @Override
     public void neighborChanged(IBlockState state, World worldIn, BlockPos pos, Block blockIn, BlockPos fromPos)
     {
-        // Intentionally empty - light blocks should not react to neighbors
+        // Intentionally empty
     }
 
     @Override
@@ -292,7 +309,6 @@ public class BlockMovingLightSource extends Block implements ITileEntityProvider
         return true;
     }
     
-    // Performance optimization - don't render sides against other blocks
     @Override
     @SideOnly(Side.CLIENT)
     public boolean shouldSideBeRendered(IBlockState blockState, IBlockAccess blockAccess, BlockPos pos, EnumFacing side)

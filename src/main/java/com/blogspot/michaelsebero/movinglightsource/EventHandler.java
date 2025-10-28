@@ -226,6 +226,7 @@ public class EventHandler
     
     /**
      * Handle lighting for a single EntityItem
+     * NOW USES DYNAMIC DETECTION FOR ALL MODS!
      */
     private void handleEntityItemLight(EntityItem entityItem)
     {
@@ -233,10 +234,13 @@ public class EventHandler
         
         ItemStack stack = entityItem.getItem();
         
-        // Check if the item should emit light
-        if (!stack.isEmpty() && BlockMovingLightSource.LIGHT_SOURCE_MAP.containsKey(stack.getItem()))
+        // Use dynamic light detection - works for ALL mods!
+        int lightLevel = BlockMovingLightSource.getItemLightLevel(stack);
+        
+        if (lightLevel > 0)
         {
-            Block lightBlock = BlockMovingLightSource.LIGHT_SOURCE_MAP.get(stack.getItem());
+            // Get the appropriate light block for this light level
+            Block lightBlock = BlockMovingLightSource.getLightBlockForLevel(lightLevel);
             if (lightBlock != null && lightBlock != Blocks.AIR)
             {
                 placeItemLight(entityItem, lightBlock);
