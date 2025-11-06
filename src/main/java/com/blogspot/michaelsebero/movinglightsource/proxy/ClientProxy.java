@@ -25,7 +25,6 @@ import org.lwjgl.util.glu.GLU;
 import org.lwjgl.util.glu.Sphere;
 
 import com.blogspot.michaelsebero.movinglightsource.MainMod;
-import com.blogspot.michaelsebero.movinglightsource.VersionChecker;
 import com.blogspot.michaelsebero.movinglightsource.registries.BlockRegistry;
 
 import net.minecraft.client.Minecraft;
@@ -104,12 +103,8 @@ public class ClientProxy extends CommonProxy
         // do common stuff
         super.fmlLifeCycleEvent(event);
 
-        // do client-specific stuff
-        MainMod.versionChecker = new VersionChecker();
-        Thread versionCheckThread = new Thread(MainMod.versionChecker, "Version Check");
-        versionCheckThread.start();
-
-}
+        // Version checker removed - no longer checking for updates
+    }
 
     /*
      * Registers key bindings

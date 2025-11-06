@@ -107,10 +107,6 @@ public class MainMod
     // Says where the client and server 'proxy' code is loaded.
     @SidedProxy(clientSide="com.blogspot.michaelsebero.movinglightsource.proxy.ClientProxy", serverSide="com.blogspot.michaelsebero.movinglightsource.proxy.CommonProxy")
     public static CommonProxy proxy;
-    
-    // Version checking instance
-	public static VersionChecker versionChecker;
-	public static boolean haveWarnedVersionOutOfDate = false;
             
     @EventHandler
     // preInit "Run before anything else. Read your config, create blocks, items, etc, and register them with the GameRegistry."
