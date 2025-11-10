@@ -28,6 +28,7 @@ import com.blogspot.michaelsebero.movinglightsource.MainMod;
 import com.blogspot.michaelsebero.movinglightsource.registries.BlockRegistry;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.client.renderer.RenderItem;
 import net.minecraft.client.renderer.block.model.ModelResourceLocation;
 import net.minecraft.client.renderer.entity.RenderManager;
@@ -188,42 +189,50 @@ public class ClientProxy extends CommonProxy
     /*
      * For rendering a sphere, need to make the call list
      * Must be called after pre-init, otherwise Minecraft.getMinecraft() will fail will null pointer exception
+     * FIXED: Properly reset GL state after sphere creation to prevent GUI rendering issues
      */
     public void createSphereCallList()
     {
         Sphere sphere = new Sphere();
-       //GLU_POINT will render it as dots.
-       //GLU_LINE will render as wireframe
-       //GLU_SILHOUETTE will render as ?shadowed? wireframe
-       //GLU_FILL as a solid.
+        //GLU_POINT will render it as dots.
+        //GLU_LINE will render as wireframe
+        //GLU_SILHOUETTE will render as ?shadowed? wireframe
+        //GLU_FILL as a solid.
         sphere.setDrawStyle(GLU.GLU_FILL);
-       //GLU_SMOOTH will try to smoothly apply lighting
-       //GLU_FLAT will have a solid brightness per face, and will not shade.
-       //GLU_NONE will be completely solid, and probably will have no depth to it's appearance.
+        //GLU_SMOOTH will try to smoothly apply lighting
+        //GLU_FLAT will have a solid brightness per face, and will not shade.
+        //GLU_NONE will be completely solid, and probably will have no depth to it's appearance.
         sphere.setNormals(GLU.GLU_SMOOTH);
-       //GLU_INSIDE will render as if you are inside the sphere, making it appear inside out.(Similar to how ender portals are rendered)
+        //GLU_INSIDE will render as if you are inside the sphere, making it appear inside out.(Similar to how ender portals are rendered)
         sphere.setOrientation(GLU.GLU_OUTSIDE);
         sphereIdOutside = GL11.glGenLists(1);
-       //Create a new list to hold our sphere data.
+        //Create a new list to hold our sphere data.
         GL11.glNewList(sphereIdOutside, GL11.GL_COMPILE);
-       //binds the texture 
-       ResourceLocation rL = new ResourceLocation(MainMod.MODID+":textures/entities/sphere.png");
-       Minecraft.getMinecraft().getTextureManager().bindTexture(rL);
-       //The drawing the sphere is automatically doing is getting added to our list. Careful, the last 2 variables
-       //control the detail, but have a massive impact on performance. 32x32 is a good balance on my machine.s
-       sphere.draw(0.5F, 32, 32);
-       GL11.glEndList();
+        //binds the texture 
+        ResourceLocation rL = new ResourceLocation(MainMod.MODID+":textures/entities/sphere.png");
+        Minecraft.getMinecraft().getTextureManager().bindTexture(rL);
+        //The drawing the sphere is automatically doing is getting added to our list. Careful, the last 2 variables
+        //control the detail, but have a massive impact on performance. 32x32 is a good balance on my machine.
+        sphere.draw(0.5F, 32, 32);
+        GL11.glEndList();
 
-       //GLU_INSIDE will render as if you are inside the sphere, making it appear inside out.(Similar to how ender portals are rendered)
-       sphere.setOrientation(GLU.GLU_INSIDE);
-       sphereIdInside = GL11.glGenLists(1);
-       //Create a new list to hold our sphere data.
-       GL11.glNewList(sphereIdInside, GL11.GL_COMPILE);
-       Minecraft.getMinecraft().getTextureManager().bindTexture(rL);
-       //The drawing the sphere is automatically doing is getting added to our list. Careful, the last 2 variables
-       //control the detail, but have a massive impact on performance. 32x32 is a good balance on my machine.s
-       sphere.draw(0.5F, 32, 32);
-       GL11.glEndList();
+        //GLU_INSIDE will render as if you are inside the sphere, making it appear inside out.(Similar to how ender portals are rendered)
+        sphere.setOrientation(GLU.GLU_INSIDE);
+        sphereIdInside = GL11.glGenLists(1);
+        //Create a new list to hold our sphere data.
+        GL11.glNewList(sphereIdInside, GL11.GL_COMPILE);
+        Minecraft.getMinecraft().getTextureManager().bindTexture(rL);
+        //The drawing the sphere is automatically doing is getting added to our list. Careful, the last 2 variables
+        //control the detail, but have a massive impact on performance. 32x32 is a good balance on my machine.
+        sphere.draw(0.5F, 32, 32);
+        GL11.glEndList();
+        
+        // CRITICAL FIX: Reset GL state after creating display lists
+        // This prevents the sphere's GL state from affecting other rendering (like JEI)
+        GlStateManager.bindTexture(0);
+        GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
+        GlStateManager.disableBlend();
+        GlStateManager.enableTexture2D();
     }
     
     /*
